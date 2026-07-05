@@ -1,98 +1,471 @@
-/**
- * JORNADA DA AMIZADE - Jogo de Aniversário
- * Estilo: RPG Chiptune (Inspirado em Deltarune)
- */
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>A Jornada da Amizade</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
+        :root {
+            --bg: #000;
+            --ui-border: #fff;
+            --player: #00ffff;
+            --accent: #ffff00;
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background: #111; overflow: hidden;
+            font-family: 'Press Start 2P', cursive;
+            display: flex; justify-content: center; align-items: center;
+        }
+
+        #game-container {
+            position: relative;
+            width: 640px; height: 480px;
+            background: var(--bg);
+            border: 4px solid #333;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+
+        canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+
+        /* UI de Diálogo */
+        #ui-layer {
+            position: absolute; bottom: 20px; left: 20px; right: 20px;
+            height: 120px; background: black; border: 4px solid white;
+            padding: 15px; box-sizing: border-box; display: none;
+            z-index: 10;
+        }
+
+        #ui-name { color: var(--accent); font-size: 12px; margin-bottom: 8px; }
+        #ui-text { color: white; font-size: 14px; line-height: 1.5; margin: 0; }
+
+        /* Overlays */
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 20; text-align: center;
+        }
+
+        .title-card { color: #00ffcc; font-size: 28px; margin-bottom: 20px; line-height: 1.4; }
+        
+        button {
+            background: transparent; border: 2px solid white; color: white;
+            padding: 15px 30px; font-family: 'Press Start 2P'; cursor: pointer;
+            transition: 0.2s; margin: 10px;
+        }
+        button:hover { background: white; color: black; }
+
+        .hidden { display: none !important; }
+
+        /* Mobile Controls */
+        #controls {
+            position: absolute; bottom: 10px; width: 100%; display: none;
+            justify-content: space-between; padding: 0 20px; box-sizing: border-box;
+        }
+        .dpad { display: grid; grid-template-columns: 50px 50px 50px; }
+        .btn-ctrl { 
+            width: 50px; height: 50px; background: rgba(255,255,255,0.2); 
+            border: 1px solid white; color: white; display: flex; 
+            justify-content: center; align-items: center;
+        }
+
+        @media (max-width: 768px) {
+            #game-container { width: 100vw; height: 100vh; border: none; }
+            #controls { display: flex; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Diálogos -->
+    <div id="ui-layer">
+        <div id="ui-name">NOME</div>
+        <p id="ui-text"></p>
+    </div>
+
+    <!-- Menu Inicial -->
+    <div id="start-menu" class="overlay">
+        <h1 class="title-card">A JORNADA DA<br>AMIZADE</h1>
+        <p style="font-size: 10px; margin-bottom: 30px;">Uma homenagem especial de aniversário</p>
+        <button onclick="startGame()">INICIAR AVENTURA</button>
+    </div>
+
+    <!-- Menu de Pausa -->
+    <div id="pause-menu" class="overlay hidden">
+        <h2>PAUSA</h2>
+        <button onclick="togglePause()">CONTINUAR</button>
+        <button onclick="resetGame()">REINICIAR</button>
+    </div>
+
+    <!-- Créditos/Final -->
+    <div id="final-screen" class="overlay hidden">
+        <div id="letter-content" style="max-width: 80%; line-height: 1.8; font-size: 12px; color: #fff;"></div>
+        <button id="restart-btn" class="hidden" onclick="location.reload()">JOGAR NOVAMENTE</button>
+    </div>
+
+    <!-- Controles Mobile -->
+    <div id="controls">
+        <div class="dpad">
+            <div></div><div class="btn-ctrl" id="m-up">▲</div><div></div>
+            <div class="btn-ctrl" id="m-left">◀</div><div></div><div class="btn-ctrl" id="m-right">▶</div>
+            <div></div><div class="btn-ctrl" id="m-down">▼</div><div></div>
+        </div>
+        <div class="btn-ctrl" id="m-action" style="border-radius: 50%; width: 70px; height: 70px;">Z</div>
+    </div>
+</div>
+
+<script>
+/** 
+ * LÓGICA DO JOGO
+ */
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = 640;
 canvas.height = 480;
 
-// --- CONFIGURAÇÕES E ESTADO ---
-const state = {
-    chapter: 1,
-    paused: false,
-    dialogueActive: false,
-    inventory: [],
-    player: { x: 300, y: 240, size: 30, speed: 4, color: '#00ffff', dir: 'down' },
-    keys: {},
-    npcs: [],
-    interactables: [],
-    settings: { music: 0.5, sfx: 0.7 },
-    typing: false
-};
-
-// --- MOTOR DE ÁUDIO (CHIPTUNE) ---
+// Configurações do Áudio
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playTone(freq, type, duration, vol = 0.1) {
     const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type; // 'square', 'sawtooth', 'triangle'
+    const g = audioCtx.createGain();
+    osc.type = type;
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gain.gain.setValueAtTime(vol * state.settings.sfx, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + duration);
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + duration);
 }
 
-// Música simples (Loop)
-function playMusic() {
-    // Implementação básica de arpeggio chiptune
-    let step = 0;
-    const notes = [261.63, 329.63, 392.00, 523.25]; // Dó Maior
-    setInterval(() => {
-        if (!state.paused && state.settings.music > 0) {
-            playTone(notes[step % notes.length], 'square', 0.2, state.settings.music * 0.1);
-            step++;
+// Estado do Jogo
+const game = {
+    state: 'MENU',
+    chapter: 1,
+    paused: false,
+    player: { x: 300, y: 350, w: 30, h: 30, speed: 4, color: '#00ffff' },
+    keys: {},
+    entities: [],
+    dialogue: { active: false, text: '', index: 0, currentStr: '', name: '' },
+    shake: 0,
+    particles: []
+};
+
+// Mensagens por Capítulo
+const chapters = {
+    1: { 
+        msg: "Toda amizade começa com um pequeno passo. Obrigado por ter caminhado ao meu lado.",
+        task: "Encontre a chave na floresta.",
+        npc: "Guardião: Olá! Para avançar, você precisa da Chave do Início que deixei entre as árvores."
+    },
+    2: { 
+        msg: "Existem pessoas que tornam qualquer desafio mais fácil. Você é uma delas.",
+        task: "Ative os 3 interruptores amarelos.",
+        npc: "Mestre: Puzzles são como problemas da vida: melhor resolvidos com paciência!"
+    },
+    3: { 
+        msg: "Mesmo nas batalhas da vida, sempre foi bom saber que eu podia contar com você.",
+        task: "Enfrente o 'Medo' (Toque nele para desafiar).",
+        npc: "Sombra: Eu represento suas dúvidas. Mas um amigo de verdade traz a luz!"
+    },
+    4: { 
+        msg: "Alguns caminhos seriam muito mais difíceis sem uma boa amizade.",
+        task: "Atravesse o labirinto de luz.",
+        npc: "Viajante: Não se perca! Siga o brilho no final do túnel."
+    },
+    5: { 
+        msg: "Parabéns! O verdadeiro presente é a nossa amizade.",
+        task: "Entre no Castelo da Gratidão.",
+        npc: "Rei: Você chegou! A carta final te espera no centro do salão."
+    }
+};
+
+// Input
+window.addEventListener('keydown', e => game.keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => game.keys[e.key.toLowerCase()] = false);
+
+// Loop Principal
+function update() {
+    if (game.paused || game.dialogue.active || game.state !== 'PLAYING') return;
+
+    // Movimentação
+    if (game.keys['arrowup'] || game.keys['w']) game.player.y -= game.player.speed;
+    if (game.keys['arrowdown'] || game.keys['s']) game.player.y += game.player.speed;
+    if (game.keys['arrowleft'] || game.keys['a']) game.player.x -= game.player.speed;
+    if (game.keys['arrowright'] || game.keys['d']) game.player.x += game.player.speed;
+
+    // Limites
+    game.player.x = Math.max(0, Math.min(canvas.width - game.player.w, game.player.x));
+    game.player.y = Math.max(0, Math.min(canvas.height - game.player.h, game.player.y));
+
+    // Colisões e Interações
+    game.entities.forEach(ent => {
+        if (checkCollision(game.player, ent)) {
+            if (ent.type === 'exit' && ent.active) {
+                nextChapter();
+            } else if (ent.type === 'item') {
+                ent.collected = true;
+                playTone(600, 'square', 0.2);
+                showDialogue("SISTEMA", "Você encontrou o item necessário! Siga para a saída.");
+                game.entities.find(e => e.type === 'exit').active = true;
+                game.entities = game.entities.filter(e => !e.collected);
+            } else if (ent.type === 'switch') {
+                if (!ent.active) {
+                    ent.active = true;
+                    playTone(400, 'triangle', 0.1);
+                    checkSwitches();
+                }
+            } else if (ent.type === 'enemy') {
+                startBattle(ent);
+            }
         }
-    }, 250);
+    });
+
+    // Partículas
+    if (Math.random() > 0.9) createParticle(game.player.x + 15, game.player.y + 15, game.player.color);
+    game.particles.forEach((p, i) => {
+        p.y -= 1; p.life -= 0.02;
+        if (p.life <= 0) game.particles.splice(i, 1);
+    });
 }
 
-// --- SISTEMA DE DIÁLOGO ---
-const diagBox = document.getElementById('dialogue-box');
-const diagText = document.getElementById('dialogue-text');
-const diagName = document.getElementById('dialogue-name');
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (game.shake > 0) {
+        ctx.save();
+        ctx.translate(Math.random()*game.shake, Math.random()*game.shake);
+        game.shake--;
+    }
+
+    // Desenha Fundo Pixelado
+    drawGrid();
+
+    // Entidades
+    game.entities.forEach(ent => {
+        ctx.fillStyle = ent.color;
+        if (ent.type === 'exit' && !ent.active) ctx.globalAlpha = 0.3;
+        ctx.fillRect(ent.x, ent.y, ent.w, ent.h);
+        ctx.globalAlpha = 1.0;
+        
+        // Bordas estilo Retro
+        ctx.strokeStyle = "white";
+        ctx.strokeRect(ent.x, ent.y, ent.w, ent.h);
+    });
+
+    // Partículas
+    game.particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.fillRect(p.x, p.y, 4, 4);
+    });
+    ctx.globalAlpha = 1.0;
+
+    // Jogador (Um coração/alma dentro de um quadrado)
+    ctx.fillStyle = game.player.color;
+    ctx.fillRect(game.player.x, game.player.y, game.player.w, game.player.h);
+    ctx.fillStyle = "white";
+    ctx.font = "10px Arial";
+    ctx.fillText("❤", game.player.x + 8, game.player.y + 20);
+
+    // Texto de Objetivo
+    ctx.fillStyle = "white";
+    ctx.font = "10px 'Press Start 2P'";
+    ctx.fillText(`CAPÍTULO ${game.chapter}: ${chapters[game.chapter].task}`, 20, 30);
+
+    if (game.shake > 0) ctx.restore();
+
+    requestAnimationFrame(() => {
+        update();
+        draw();
+    });
+}
+
+// Auxiliares
+function drawGrid() {
+    ctx.strokeStyle = "#222";
+    for(let i=0; i<canvas.width; i+=40) {
+        ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,canvas.height); ctx.stroke();
+    }
+    for(let i=0; i<canvas.height; i+=40) {
+        ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width,i); ctx.stroke();
+    }
+}
+
+function checkCollision(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function createParticle(x, y, color) {
+    game.particles.push({ x, y, color, life: 1 });
+}
+
+// Sistemas de Jogo
+function startGame() {
+    document.getElementById('start-menu').classList.add('hidden');
+    game.state = 'PLAYING';
+    audioCtx.resume();
+    initChapter(1);
+    draw();
+    playTone(440, 'square', 0.5);
+}
+
+function initChapter(num) {
+    game.chapter = num;
+    game.player.x = 50; game.player.y = 200;
+    game.entities = [];
+    
+    // NPC em todos os capítulos
+    game.entities.push({ x: 100, y: 100, w: 30, h: 30, color: '#ff00ff', type: 'npc' });
+
+    // Saída em todos os capítulos
+    game.entities.push({ x: 580, y: 200, w: 40, h: 80, color: '#00ff00', type: 'exit', active: false });
+
+    if (num === 1) {
+        game.entities.push({ x: 400, y: 300, w: 20, h: 20, color: '#ffff00', type: 'item' });
+    } else if (num === 2) {
+        for(let i=0; i<3; i++) game.entities.push({ x: 200 + (i*100), y: 350, w: 30, h: 30, color: '#ffff00', type: 'switch', active: false });
+    } else if (num === 3) {
+        game.entities.push({ x: 300, y: 200, w: 60, h: 60, color: '#ff4444', type: 'enemy' });
+    } else if (num === 4) {
+        // Simulação de labirinto (paredes invisíveis)
+        game.entities.push({ x: 400, y: 100, w: 20, h: 20, color: '#ffff00', type: 'item' });
+    } else if (num === 5) {
+        game.entities.push({ x: 300, y: 240, w: 40, h: 40, color: '#ffffff', type: 'letter' });
+        game.entities.find(e => e.type === 'exit').active = true;
+    }
+
+    showDialogue("AMIGO", chapters[num].msg);
+}
+
+function checkSwitches() {
+    const switches = game.entities.filter(e => e.type === 'switch');
+    if (switches.every(s => s.active)) {
+        game.entities.find(e => e.type === 'exit').active = true;
+        showDialogue("SISTEMA", "Os mecanismos se alinharam! O caminho está aberto.");
+    }
+}
+
+function startBattle(enemy) {
+    game.shake = 20;
+    playTone(100, 'sawtooth', 0.5);
+    showDialogue("BATALHA", "Você enfrentou seus medos com determinação! Você venceu!", () => {
+        game.entities = game.entities.filter(e => e !== enemy);
+        game.entities.find(e => e.type === 'exit').active = true;
+    });
+}
+
+function nextChapter() {
+    if (game.chapter < 5) {
+        game.shake = 10;
+        playTone(880, 'square', 0.3);
+        initChapter(game.chapter + 1);
+    } else {
+        showFinalLetter();
+    }
+}
 
 function showDialogue(name, text, callback) {
-    state.dialogueActive = true;
-    diagBox.classList.remove('hidden');
-    diagName.innerText = name;
-    diagText.innerText = "";
-    state.typing = true;
-
+    game.dialogue.active = true;
+    const box = document.getElementById('ui-layer');
+    const textEl = document.getElementById('ui-text');
+    const nameEl = document.getElementById('ui-name');
+    
+    box.style.display = 'block';
+    nameEl.innerText = name;
+    textEl.innerText = '';
+    
     let i = 0;
     const interval = setInterval(() => {
-        diagText.innerText += text[i];
-        playTone(200 + (Math.random() * 50), 'triangle', 0.05, 0.05);
+        textEl.innerText += text[i];
+        playTone(200 + (Math.random()*50), 'triangle', 0.05, 0.05);
         i++;
         if (i >= text.length) {
             clearInterval(interval);
-            state.typing = false;
+            setTimeout(() => {
+                window.addEventListener('keydown', function close(e) {
+                    if (e.key === 'z' || e.key === 'Enter') {
+                        box.style.display = 'none';
+                        game.dialogue.active = false;
+                        window.removeEventListener('keydown', close);
+                        if (callback) callback();
+                    }
+                });
+            }, 500);
         }
     }, 40);
-
-    const closeHandler = (e) => {
-        if (e.key === 'z' || e.key === 'Enter' || e.type === 'touchstart') {
-            if (state.typing) return;
-            diagBox.classList.add('hidden');
-            state.dialogueActive = false;
-            window.removeEventListener('keydown', closeHandler);
-            canvas.removeEventListener('touchstart', closeHandler);
-            if (callback) callback();
-        }
-    };
-    window.addEventListener('keydown', closeHandler);
-    canvas.addEventListener('touchstart', closeHandler);
 }
 
-// --- LÓGICA DOS CAPÍTULOS ---
-function loadChapter(num) {
-    state.chapter = num;
-    state.npcs = [];
-    state.interactables = [];
-    localStorage.setItem('birthday_game_save', num);
+function showFinalLetter() {
+    game.state = 'ENDING';
+    const screen = document.getElementById('final-screen');
+    const content = document.getElementById('letter-content');
+    screen.classList.remove('hidden');
+    
+    const fullText = `
+        PARABÉNS!<br><br>
+        Se você chegou até aqui, encontrou o verdadeiro presente.<br><br>
+        Obrigado por cada conversa, cada risada e todos os momentos.<br><br>
+        Sua amizade faz muita diferença na minha vida.<br><br>
+        Desejo que este novo ano seja cheio de felicidade, saúde e muitas aventuras.<br><br>
+        Feliz aniversário!
+    `;
 
-    switch(num) {
-        case 1: // Floresta
+    let i = 0;
+    const interval = setInterval(() => {
+        content.innerHTML = fullText.substring(0, i);
+        i++;
+        if (i > fullText.length) {
+            clearInterval(interval);
+            document.getElementById('restart-btn').classList.remove('hidden');
+            startFireworks();
+        }
+    }, 50);
+}
+
+function startFireworks() {
+    setInterval(() => {
+        const x = Math.random() * canvas.width;
+        const y = Math.random() * canvas.height;
+        for(let i=0; i<20; i++) {
+            game.particles.push({
+                x, y, 
+                color: `hsl(${Math.random()*360}, 100%, 50%)`,
+                life: 2
+            });
+        }
+        playTone(150 + Math.random()*300, 'square', 0.2, 0.05);
+    }, 400);
+}
+
+function togglePause() {
+    game.paused = !game.paused;
+    document.getElementById('pause-menu').classList.toggle('hidden', !game.paused);
+}
+
+// Mobile Handlers
+document.querySelectorAll('.btn-ctrl').forEach(btn => {
+    btn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const id = btn.id.split('-')[1];
+        if (id === 'action') {
+            // Simula Z
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }));
+        } else {
+            game.keys['arrow' + id] = true;
+        }
+    });
+    btn.addEventListener('touchend', (e) => {
+        const id = btn.id.split('-')[1];
+        game.keys['arrow' + id] = false;
+    });
+});
+
+</script>
+</body>
+</html>

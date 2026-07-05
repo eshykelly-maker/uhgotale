@@ -1,0 +1,98 @@
+/**
+ * JORNADA DA AMIZADE - Jogo de Aniversário
+ * Estilo: RPG Chiptune (Inspirado em Deltarune)
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = 640;
+canvas.height = 480;
+
+// --- CONFIGURAÇÕES E ESTADO ---
+const state = {
+    chapter: 1,
+    paused: false,
+    dialogueActive: false,
+    inventory: [],
+    player: { x: 300, y: 240, size: 30, speed: 4, color: '#00ffff', dir: 'down' },
+    keys: {},
+    npcs: [],
+    interactables: [],
+    settings: { music: 0.5, sfx: 0.7 },
+    typing: false
+};
+
+// --- MOTOR DE ÁUDIO (CHIPTUNE) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playTone(freq, type, duration, vol = 0.1) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type; // 'square', 'sawtooth', 'triangle'
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol * state.settings.sfx, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+// Música simples (Loop)
+function playMusic() {
+    // Implementação básica de arpeggio chiptune
+    let step = 0;
+    const notes = [261.63, 329.63, 392.00, 523.25]; // Dó Maior
+    setInterval(() => {
+        if (!state.paused && state.settings.music > 0) {
+            playTone(notes[step % notes.length], 'square', 0.2, state.settings.music * 0.1);
+            step++;
+        }
+    }, 250);
+}
+
+// --- SISTEMA DE DIÁLOGO ---
+const diagBox = document.getElementById('dialogue-box');
+const diagText = document.getElementById('dialogue-text');
+const diagName = document.getElementById('dialogue-name');
+
+function showDialogue(name, text, callback) {
+    state.dialogueActive = true;
+    diagBox.classList.remove('hidden');
+    diagName.innerText = name;
+    diagText.innerText = "";
+    state.typing = true;
+
+    let i = 0;
+    const interval = setInterval(() => {
+        diagText.innerText += text[i];
+        playTone(200 + (Math.random() * 50), 'triangle', 0.05, 0.05);
+        i++;
+        if (i >= text.length) {
+            clearInterval(interval);
+            state.typing = false;
+        }
+    }, 40);
+
+    const closeHandler = (e) => {
+        if (e.key === 'z' || e.key === 'Enter' || e.type === 'touchstart') {
+            if (state.typing) return;
+            diagBox.classList.add('hidden');
+            state.dialogueActive = false;
+            window.removeEventListener('keydown', closeHandler);
+            canvas.removeEventListener('touchstart', closeHandler);
+            if (callback) callback();
+        }
+    };
+    window.addEventListener('keydown', closeHandler);
+    canvas.addEventListener('touchstart', closeHandler);
+}
+
+// --- LÓGICA DOS CAPÍTULOS ---
+function loadChapter(num) {
+    state.chapter = num;
+    state.npcs = [];
+    state.interactables = [];
+    localStorage.setItem('birthday_game_save', num);
+
+    switch(num) {
+        case 1: // Floresta
